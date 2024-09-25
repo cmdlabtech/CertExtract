@@ -1,9 +1,3 @@
-# CertExtract
-
-Here’s a sample GitHub description for your **SSL Chain Extractor** program:
-
----
-
 ## SSL Chain Extractor
 
 ### Overview
@@ -33,7 +27,7 @@ The program supports PEM, CRT, and CER formats and includes functionality to fet
      ```bash
      pip uninstall pyinstaller
      ```
-       - Locate pyinstaller.exe location - 'C:\users\[USERNAME]\appdata\local\packages\pythonsoftwarefoundation.python.3.11_qbz5n2kfra8p0\localcache\local-packages\python311\scripts\pyinstaller.exe'
+       - Locate pyinstaller.exe location - 'C:\users\{USERNAME}\appdata\local\packages\pythonsoftwarefoundation.python.3.11_qbz5n2kfra8p0\localcache\local-packages\python311\scripts\pyinstaller.exe'
        - Package into an executable:
      ```bash
      python [PyInstaller LOCATION] --onefile [path to python script]
@@ -56,7 +50,3 @@ Add screenshots of your program's GUI in action to help users visualize the proc
 
 ### License:
 MIT License
-
----
-
-This description provides an overview, features, installation steps, and usage instructions, making it easy for anyone to understand the project and get started. Let me know if you’d like to tweak any part of it!
