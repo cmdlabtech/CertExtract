@@ -46,13 +46,27 @@ The program supports PEM, CRT, and CER formats and includes functionality to fet
 - `Tkinter` for the GUI.
 
 ### How to Use:
-1. **Select an SSL Certificate**: Use the GUI to select a `.pem`, `.crt`, or `.cer` file.
-2. **Extract Certificates**: Click the "Extract Certificates" button to extract the leaf, intermediate, and root certificates.
-3. **Create FullChain**: Optionally, click "Create FullChain.cer" to generate a single file containing the entire certificate chain.
-4. **Save Output**: Each certificate is saved to a separate file (e.g., `cert_leaf.cer`, `cert_intermediate_1.cer`, `cert_root.cer`).
+1. **Browse for SSL Certificate**  
+   Click **"1. Browse for Certificate"** and select the SSL certificate file from your computer.
 
+2. **Select Save Location**  
+   Click **"2. Select Save Location"** and choose a folder where the extracted certificates and full chain will be saved.
+
+3. **Extract Certificates**  
+   Once enabled, click **"3. Extract Certificates"** to extract and save the certificate components (leaf, intermediates, root) to the selected folder.
+
+4. **Create Full Chain**  
+   Once enabled, click **"4. Create Full Chain"** to generate a `FullChain.cer` file containing the entire certificate chain and save it in the chosen location.
 ### Screenshots:
 Add screenshots of your program's GUI in action to help users visualize the process.
+
+
+![image](https://github.com/user-attachments/assets/2138f602-cb71-4b12-9bdc-8e0a64664410)
+
+
+![image](https://github.com/user-attachments/assets/fe1ec081-a3f5-4c01-a9d4-d454793ef5e2)
+
+
 
 ### License:
 MIT License
