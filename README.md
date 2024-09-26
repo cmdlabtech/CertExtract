@@ -27,7 +27,7 @@ The program supports PEM, CRT, and CER formats and includes functionality to fet
      ```bash
      pip uninstall pyinstaller
      ```
-       - Locate pyinstaller.exe location - 'C:\users\{USERNAME}\appdata\local\packages\pythonsoftwarefoundation.python.3.11_qbz5n2kfra8p0\localcache\local-packages\python311\scripts\pyinstaller.exe'
+       - Locate pyinstaller.exe location - `C:\users\{USERNAME}\appdata\local\packages\pythonsoftwarefoundation.python.3.11_qbz5n2kfra8p0\localcache\local-packages\python311\scripts\pyinstaller.exe`
        - Package into an executable:
      ```bash
      python [PyInstaller LOCATION] --onefile [path to python script]
