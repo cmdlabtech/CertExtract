@@ -20,6 +20,16 @@ jobs:
       - name: Create .app Bundle
         run: |
           cd macOS/AIOSSLTool
+
+          # Version from git tag (e.g. V6.4.3 / v6.4.3 -> 6.4.3)
+          VERSION="${GITHUB_REF_NAME#refs/tags/}"
+          VERSION="${VERSION#V}"
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: Could not derive version from GITHUB_REF_NAME=${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "Injecting CFBundle versions from tag: ${VERSION}"
           
           # Create App Bundle Structure
           mkdir -p AIOSSLTool.app/Contents/MacOS
@@ -28,28 +38,16 @@ jobs:
           # Copy Binary
           cp .build/release/AIOSSLTool AIOSSLTool.app/Contents/MacOS/
           
-          # Copy Info.plist
-          if [ -f Info.plist ]; then
-            cp Info.plist AIOSSLTool.app/Contents/
-          else
-            # Fallback (though we created one earlier)
-            echo '<?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-                <key>CFBundleExecutable</key>
-                <string>AIOSSLTool</string>
-                <key>CFBundleIdentifier</key>
-                <string>com.cmdlab.aiossltool</string>
-                <key>CFBundleName</key>
-                <string>AIO SSL Tool</string>
-                <key>CFBundlePackageType</key>
-                <string>APPL</string>
-                <key>CFBundleShortVersionString</key>
-                <string>6.0</string>
-            </dict>
-            </plist>' > AIOSSLTool.app/Contents/Info.plist
+          # Copy Info.plist (required; no hardcoded fallback version)
+          if [ ! -f Info.plist ]; then
+            echo "ERROR: macOS/AIOSSLTool/Info.plist missing"
+            exit 1
           fi
+          cp Info.plist AIOSSLTool.app/Contents/
+
+          # Overwrite version fields from the triggering tag so tag builds always match
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" AIOSSLTool.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" AIOSSLTool.app/Contents/Info.plist
           
           # Copy App Icon
           if [ -f AppIcon.icns ]; then

@@ -5,6 +5,43 @@ All notable changes to AIO SSL Tool will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.3] - 2026-03-23
+
+### Changed
+- Final release of AIO SSL Tool
+- Appcast DMG size correction for V6.4.3
+- README updates
+
+### Added
+- App Store support: privacy policy, quarantine fix, Xcode project
+- PRISM landing page for prism.cmdlab.tech
+
+## [6.4.0] - 2026-03-12
+
+### Added
+- Multiple Sub CA support and visual improvements
+
+### Changed
+- README ClearPass instructions updates
+
+## [6.3.1] - 2026-03-11
+
+### Fixed
+- Windows only: Fix ClearPass hanging (use `root.after()` for tkinter event loop)
+
+### Changed
+- Windows only: Clean up ClearPass debug logging for production
+
+## [6.3.0] - 2026-03-10
+
+### Added
+- ClearPass Certificate Management
+
+## [6.2.2] - 2026-03-07
+
+### Fixed
+- Security fixes & bug fixes
+
 ## [6.2.1] - 2026-02-22
 
 ### Fixed
