@@ -139,17 +139,24 @@ struct ChainBuilderView: View {
                             WorkflowCard(title: "Chain Status", icon: "link", color: .orange) {
                                 VStack {
                                     if viewModel.fullChainCreated {
-                                        HStack {
-                                            Image(systemName: "checkmark.shield.fill")
-                                                .font(.largeTitle)
-                                                .foregroundColor(.green)
-                                            VStack(alignment: .leading) {
-                                                Text("Chain Built")
-                                                    .font(.headline)
-                                                Text("FullChain.cer ready")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
+                                        VStack(spacing: 12) {
+                                            HStack {
+                                                Image(systemName: "checkmark.shield.fill")
+                                                    .font(.largeTitle)
+                                                    .foregroundColor(.green)
+                                                VStack(alignment: .leading) {
+                                                    Text("Chain Built")
+                                                        .font(.headline)
+                                                    Text("FullChain.cer ready")
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                }
                                             }
+                                            Button("Rebuild Chain") {
+                                                viewModel.createFullChain()
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .disabled(viewModel.certificateFile == nil || viewModel.isBuilding)
                                         }
                                         .frame(maxWidth: .infinity, minHeight: 100)
                                     } else {
@@ -178,8 +185,14 @@ struct ChainBuilderView: View {
         } message: {
             Text(viewModel.errorMessage)
         }
+        .alert("Chain Builder", isPresented: $viewModel.showingSuccess) {
+            Button("OK") { }
+        } message: {
+            Text(viewModel.successMessage)
+        }
         .onAppear {
             viewModel.loadWorkingDirectoryFiles()
+            viewModel.refreshChainStatus()
         }
     }
     

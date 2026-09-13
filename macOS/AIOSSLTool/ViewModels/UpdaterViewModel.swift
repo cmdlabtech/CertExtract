@@ -27,7 +27,6 @@ final class UpdaterViewModel: ObservableObject {
     init() {
         loadPreferences()
         
-        // Check for updates on startup if enabled
         if automaticUpdateChecks {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 self.checkForUpdatesInBackground()
@@ -97,27 +96,40 @@ final class UpdaterViewModel: ObservableObject {
     }
     
     private func parseAppcast(_ xml: String) -> (version: Int, displayVersion: String, url: String)? {
-        // Parse the first <item> in the appcast to get latest version
-        guard let versionRange = xml.range(of: #"<sparkle:version>(\d+)</sparkle:version>"#, options: .regularExpression),
-              let shortVersionRange = xml.range(of: #"<sparkle:shortVersionString>([\d.]+)</sparkle:shortVersionString>"#, options: .regularExpression),
-              let linkRange = xml.range(of: #"<link>(https://github\.com/[^<]+)</link>"#, options: .regularExpression) else {
+        // Parse only the first <item> so we don't pick up the channel <link>
+        guard let itemRange = xml.range(of: #"<item>[\s\S]*?</item>"#, options: .regularExpression) else {
+            return nil
+        }
+        let item = String(xml[itemRange])
+        
+        guard let versionRange = item.range(of: #"<sparkle:version>(\d+)</sparkle:version>"#, options: .regularExpression),
+              let shortVersionRange = item.range(of: #"<sparkle:shortVersionString>([\d.]+)</sparkle:shortVersionString>"#, options: .regularExpression) else {
             return nil
         }
         
-        let versionText = String(xml[versionRange])
-        let shortVersionText = String(xml[shortVersionRange])
-        let linkText = String(xml[linkRange])
+        let versionText = String(item[versionRange])
+        let shortVersionText = String(item[shortVersionRange])
         
-        // Extract version number
         guard let versionMatch = versionText.range(of: #"\d+"#, options: .regularExpression),
-              let shortVersionMatch = shortVersionText.range(of: #"[\d.]+"#, options: .regularExpression),
-              let urlMatch = linkText.range(of: #"https://[^<]+"#, options: .regularExpression) else {
+              let shortVersionMatch = shortVersionText.range(of: #"[\d.]+"#, options: .regularExpression) else {
             return nil
         }
         
         let version = Int(String(versionText[versionMatch])) ?? 0
         let displayVersion = String(shortVersionText[shortVersionMatch])
-        let url = String(linkText[urlMatch])
+        
+        var url = fallbackReleaseURL
+        if let enclosureRange = item.range(of: #"url="(https://[^"]+)""#, options: .regularExpression) {
+            let enclosureText = String(item[enclosureRange])
+            if let urlMatch = enclosureText.range(of: #"https://[^"]+"#, options: .regularExpression) {
+                url = String(enclosureText[urlMatch])
+            }
+        } else if let linkRange = item.range(of: #"<link>(https://github\.com/[^<]+)</link>"#, options: .regularExpression) {
+            let linkText = String(item[linkRange])
+            if let urlMatch = linkText.range(of: #"https://[^<]+"#, options: .regularExpression) {
+                url = String(linkText[urlMatch])
+            }
+        }
         
         return (version, displayVersion, url)
     }
@@ -155,7 +167,6 @@ final class UpdaterViewModel: ObservableObject {
     // MARK: - Settings
     
     func toggleAutomaticUpdates() {
-        automaticUpdateChecks.toggle()
         savePreferences()
     }
     
@@ -167,7 +178,11 @@ final class UpdaterViewModel: ObservableObject {
     // MARK: - Persistence
     
     private func loadPreferences() {
-        automaticUpdateChecks = UserDefaults.standard.bool(forKey: "AutomaticUpdateChecks")
+        if UserDefaults.standard.object(forKey: "AutomaticUpdateChecks") == nil {
+            automaticUpdateChecks = true
+        } else {
+            automaticUpdateChecks = UserDefaults.standard.bool(forKey: "AutomaticUpdateChecks")
+        }
         automaticDownload = UserDefaults.standard.bool(forKey: "AutomaticDownload")
         neverShowAdvancedOptionsWarning = UserDefaults.standard.bool(forKey: "NeverShowAdvancedOptionsWarning")
         enableCertificateArchive = UserDefaults.standard.bool(forKey: "EnableCertificateArchive")

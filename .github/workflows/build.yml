@@ -113,9 +113,9 @@ jobs:
         run: |
           # If icon exists, use it for both exe icon and runtime
           if (Test-Path windows/icon-ico.ico) {
-            pyinstaller --clean --onefile --noconsole --name "AIO-SSL-Tool" --icon "windows/icon-ico.ico" --add-data "windows/icon-ico.ico;." windows/aio_ssl_tool.py
+            pyinstaller --clean --onefile --noconsole --name "AIO-SSL-Tool" --icon "windows/icon-ico.ico" --add-data "windows/icon-ico.ico;." --add-data "windows/HomeIcon.png;." windows/aio_ssl_tool.py
           } else {
-            pyinstaller --clean --onefile --noconsole --name "AIO-SSL-Tool" windows/aio_ssl_tool.py
+            pyinstaller --clean --onefile --noconsole --name "AIO-SSL-Tool" --add-data "windows/HomeIcon.png;." windows/aio_ssl_tool.py
           }
           
       - name: Upload Artifact

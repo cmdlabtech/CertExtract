@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = SSLToolViewModel()
+    @EnvironmentObject private var updaterViewModel: UpdaterViewModel
     @State private var selectedTool: Tool? = .home
     @State private var showPRISMNotice: Bool = false
     
@@ -55,6 +56,7 @@ struct ContentView: View {
                         PFXGeneratorView(viewModel: viewModel)
                     case .settings:
                         SettingsView()
+                            .environmentObject(updaterViewModel)
                     }
                 } else {
                     ContentUnavailableView("Select a Tool", systemImage: "wrench.and.screwdriver")
@@ -70,6 +72,14 @@ struct ContentView: View {
                     showPRISMNotice = true
                 }
             }
+        }
+        .alert("Update Available", isPresented: $updaterViewModel.showUpdateAlert) {
+            Button("Download v\(updaterViewModel.latestVersion)") {
+                updaterViewModel.openReleaseURL()
+            }
+            Button("Later", role: .cancel) { }
+        } message: {
+            Text("A new version (\(updaterViewModel.latestVersion)) is available. Click Download to open the release page in your browser.")
         }
         .alert("AIO SSL Tool Has Grown", isPresented: $showPRISMNotice) {
             Button("Learn More") {

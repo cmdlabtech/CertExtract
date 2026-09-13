@@ -18,6 +18,9 @@ Cryptographic Implementations:
 
 import os
 import sys
+import json
+import queue
+import ipaddress
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, Menu, Toplevel, simpledialog
@@ -27,10 +30,23 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
 import platform
 import threading
 import webbrowser
+
+__version__ = "6.4.4"
+SETTINGS_PATH = os.path.expanduser("~/.aio_ssl_tool_settings.json")
+
+def cert_filetypes():
+    if os.name == "nt":
+        return [("Certificates", "*.cer;*.crt;*.pem;*.der"), ("All files", "*.*")]
+    return [("Certificates", "*.cer *.crt *.pem *.der"), ("All files", "*.*")]
+
+def key_filetypes():
+    if os.name == "nt":
+        return [("PEM Keys", "*.pem;*.key"), ("All files", "*.*")]
+    return [("PEM Keys", "*.pem *.key"), ("All files", "*.*")]
 
 def resource_path(relative_path):
     base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -88,7 +104,10 @@ class AIOSSLToolApp:
         self.never_show_advanced_warning = False
         self.pfx_mac_algorithm = "SHA-256"
         self.pfx_encryption_algorithm = "Default"
+        self.enable_certificate_archive = False
+        self.hide_archive_folder = True
         
+        self._load_settings()
         self.create_layout()
         if not os.path.exists(os.path.expanduser("~/.aiossltool_prism_641")):
             self.root.after(500, self._show_prism_notice)
@@ -404,26 +423,6 @@ class AIOSSLToolApp:
                 self.csr_san_text.delete("1.0", "end")
                 self.csr_san_text.tag_remove("placeholder", "1.0", "end")
                 self.csr_placeholder_active = False
-        
-                # Generate button (smaller, softer color)
-                ctk.CTkButton(
-                    csr_content,
-                    text="Generate CSR + Private Key",
-                    command=self.generate_csr_inline,
-                    font=("Arial", 14, "bold"),
-                    height=40,
-                    fg_color="#2563eb",
-                    hover_color="#1e40af",
-                ).pack(fill="x", pady=(18, 8))
-
-                # Small helper note (compact)
-                ctk.CTkLabel(
-                    csr_content,
-                    text="Files saved to the working directory. Keep private keys secure.",
-                    font=("Arial", 10),
-                    text_color="gray60",
-                    anchor="w",
-                ).pack(fill="x", pady=(8, 18))
         except Exception:
             pass
 
@@ -501,7 +500,21 @@ class AIOSSLToolApp:
             ecc_curve = self.csr_ecc_curve_var.get() if hasattr(self, 'csr_ecc_curve_var') else "P-256"
             password = self.csr_pass_entry.get().strip() if hasattr(self, 'csr_pass_entry') else ""
 
-            # Call existing generator
+            cn = data.get("Common Name", "")
+            if not cn:
+                messagebox.showerror("Error", "Common Name (CN) is required")
+                return
+
+            country = data.get("Country", "")
+            if country and len(country) != 2:
+                messagebox.showerror(
+                    "Error",
+                    "Country code must be exactly 2 letters (ISO 3166-1 alpha-2)"
+                )
+                return
+            if country:
+                data["Country"] = country.upper()
+
             self.generate_csr_from_data(data, sans, key_type, key_size, ecc_curve, password)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to generate CSR: {e}")
@@ -593,6 +606,14 @@ class AIOSSLToolApp:
             
             ctk.CTkLabel(text_frame, text="FullChain.cer", font=("Arial", 12, "bold"), anchor="w").pack(anchor="w")
             ctk.CTkLabel(text_frame, text="Created", font=("Arial", 9), text_color="gray70", anchor="w").pack(anchor="w")
+            
+            ctk.CTkButton(
+                chain_content,
+                text="Rebuild Chain",
+                command=self.create_full_chain,
+                height=36,
+                state="normal" if self.cert_file else "disabled"
+            ).pack(fill="x", pady=(8, 0))
         else:
             build_btn = ctk.CTkButton(
                 chain_content,
@@ -834,7 +855,7 @@ class AIOSSLToolApp:
             pass
         
         ctk.CTkLabel(icon_frame, text="AIO SSL Suite", font=("Arial", 20, "bold")).pack()
-        ctk.CTkLabel(icon_frame, text="Version V6.4.3", font=("Arial", 12), text_color="gray70").pack(pady=5)
+        ctk.CTkLabel(icon_frame, text=f"Version V{__version__}", font=("Arial", 12), text_color="gray70").pack(pady=5)
         
         # About Section
         about_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#1a1a1a")
@@ -967,6 +988,7 @@ class AIOSSLToolApp:
     def toggle_advanced_warning(self):
         """Toggle advanced options warning preference"""
         self.never_show_advanced_warning = self.adv_checkbox_var.get()
+        self._save_settings()
         if self.never_show_advanced_warning:
             # Show humorous warning (matches macOS)
             result = messagebox.askyesno(
@@ -980,18 +1002,49 @@ class AIOSSLToolApp:
                 # User chose "No", revert the setting
                 self.never_show_advanced_warning = False
                 self.adv_checkbox_var.set(False)
+                self._save_settings()
     
     def toggle_certificate_archive(self):
         """Toggle certificate archive preference"""
         self.enable_certificate_archive = self.archive_checkbox_var.get()
+        self._save_settings()
         # Refresh settings view to show/hide sub-options
         self.show_view("settings")
 
     def toggle_hide_archive_folder(self):
         """Toggle hide archive folder preference"""
         self.hide_archive_folder = self.hide_archive_checkbox_var.get()
+        self._save_settings()
         # Refresh to update info label
         self.show_view("settings")
+
+    def _load_settings(self):
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.never_show_advanced_warning = bool(data.get("never_show_advanced_warning", False))
+            self.enable_certificate_archive = bool(data.get("enable_certificate_archive", False))
+            self.hide_archive_folder = bool(data.get("hide_archive_folder", True))
+            saved_dir = data.get("save_directory")
+            if saved_dir and os.path.isdir(saved_dir):
+                self.save_directory = saved_dir
+                chain_path = os.path.join(saved_dir, "FullChain.cer")
+                self.fullchain_created = os.path.isfile(chain_path)
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        try:
+            data = {
+                "never_show_advanced_warning": self.never_show_advanced_warning,
+                "enable_certificate_archive": getattr(self, "enable_certificate_archive", False),
+                "hide_archive_folder": getattr(self, "hide_archive_folder", True),
+                "save_directory": self.save_directory,
+            }
+            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception:
+            pass
     
     def archive_files(self, file_paths, domain=None):
         """Archive generated files to .archive/{domain}/{timestamp}/ inside the working directory."""
@@ -1054,7 +1107,7 @@ class AIOSSLToolApp:
         """Browse for private key in PFX view"""
         f = filedialog.askopenfilename(
             initialdir=self.save_directory,
-            filetypes=[("PEM Keys", "*.pem *.key"), ("All files", "*.*")]
+            filetypes=key_filetypes()
         )
         if f:
             self.private_key_file = f
@@ -1065,7 +1118,9 @@ class AIOSSLToolApp:
         directory = filedialog.askdirectory(title="Select Working Directory")
         if directory:
             self.save_directory = directory
-            # Refresh current view to show updated directory
+            self._save_settings()
+            chain_path = os.path.join(directory, "FullChain.cer")
+            self.fullchain_created = os.path.isfile(chain_path)
             self.show_view(self.current_view)
     
     def generate_csr_from_data(self, data, sans, key_type, key_size, ecc_curve, password=""):
@@ -1108,11 +1163,13 @@ class AIOSSLToolApp:
                 (NameOID.ORGANIZATION_NAME, data.get("Organization")),
                 (NameOID.ORGANIZATIONAL_UNIT_NAME, data.get("Organizational Unit")),
                 (NameOID.COMMON_NAME, data.get("Common Name")),
-                (NameOID.EMAIL_ADDRESS, data.get("Email Address (Optional)"))
+                (NameOID.EMAIL_ADDRESS, data.get("Email Address"))
             ]:
                 if val:
                     attrs.append(x509.NameAttribute(oid, val))
-            subject = x509.Name(attrs or [x509.NameAttribute(NameOID.COMMON_NAME, "default")])
+            if not data.get("Common Name"):
+                raise ValueError("Common Name (CN) is required")
+            subject = x509.Name(attrs)
             builder = x509.CertificateSigningRequestBuilder().subject_name(subject)
             
             # Add Subject Alternative Names extension (RFC 5280)
@@ -1129,12 +1186,15 @@ class AIOSSLToolApp:
                     critical=False
                 )
             
-            # Add key usage extensions (RFC 5280 Section 4.2.1.3 and 4.2.1.12)
+            builder = builder.add_extension(
+                x509.BasicConstraints(ca=False, path_length=None),
+                critical=True
+            )
             builder = builder.add_extension(
                 x509.KeyUsage(
                     digital_signature=True,
-                    key_encipherment=True,
-                    content_commitment=False,  # formerly nonRepudiation
+                    key_encipherment=(key_type == "RSA"),
+                    content_commitment=False,
                     data_encipherment=False,
                     key_agreement=False,
                     key_cert_sign=False,
@@ -1145,7 +1205,7 @@ class AIOSSLToolApp:
                 critical=True
             )
             builder = builder.add_extension(
-                x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH, x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]),
+                x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH, ExtendedKeyUsageOID.CLIENT_AUTH]),
                 critical=False
             )
             
@@ -1198,7 +1258,7 @@ class AIOSSLToolApp:
             )
             
             # Archive CSR + key using commonName as domain
-            cn = data.get("CN", "")
+            cn = data.get("Common Name", "")
             self.archive_files([csr_path, priv_path], domain=cn if cn else None)
             self._reset_csr_form()
 
@@ -1210,11 +1270,11 @@ class AIOSSLToolApp:
         cert_file = filedialog.askopenfilename(
             initialdir=self.save_directory,
             title="Select Certificate",
-            filetypes=[("Certificates", "*.cer *.crt *.pem"), ("All files", "*.*")]
+            filetypes=cert_filetypes()
         )
         if cert_file:
             self.cert_file = cert_file
-            # Refresh chain view to show selected certificate
+            self.fullchain_created = False
             if self.current_view == "chain":
                 self.show_view("chain")
     
@@ -1244,23 +1304,25 @@ class AIOSSLToolApp:
         
         def check_queue():
             try:
-                typ, msg = self.queue.get_nowait()
+                item = self.queue.get_nowait()
+                typ = item[0]
+                msg = item[1]
+                path = item[2] if len(item) > 2 else None
                 progress_bar.stop()
                 progress_dialog.destroy()
                 
                 if typ == "success":
                     self.fullchain_created = True
-                    messagebox.showinfo("Success", f"Full chain saved:\n{msg}")
-                    # Archive chain file using cert subject as domain
+                    messagebox.showinfo("Success", msg)
+                    archive_path = path or os.path.join(self.save_directory, "FullChain.cer")
                     try:
-                        from cryptography import x509
-                        with open(msg, "rb") as cf:
+                        with open(archive_path, "rb") as cf:
                             cert = x509.load_pem_x509_certificate(cf.read())
                         cn = cert.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
                         domain = cn[0].value if cn else None
-                        self.archive_files([msg], domain=domain)
+                        self.archive_files([archive_path], domain=domain)
                     except Exception:
-                        self.archive_files([msg], domain=None)
+                        self.archive_files([archive_path], domain=None)
                     # Refresh view
                     if self.current_view == "chain":
                         self.show_view("chain")
@@ -1281,18 +1343,30 @@ class AIOSSLToolApp:
                 raise ValueError("No valid certificate found")
             chain = certs.copy()
             current = chain[-1]
-            while not self.is_self_signed(current):
+            max_depth = 15
+            while not self.is_self_signed(current) and len(chain) < max_depth:
                 issuer = self.fetch_issuer_from_windows(current)
                 if not issuer:
                     break
-                if issuer not in chain:
-                    chain.append(issuer)
+                if issuer in chain:
+                    break
+                chain.append(issuer)
                 current = issuer
             path = os.path.join(self.save_directory, "FullChain.cer")
             with open(path, "wb") as f:
                 for c in chain:
                     f.write(c.public_bytes(serialization.Encoding.PEM))
-            self.queue.put(("success", path))
+            complete = self.is_self_signed(chain[-1])
+            count = len(chain)
+            if complete:
+                msg = f"Full chain saved: {path} ({count} certificate{'s' if count != 1 else ''})"
+            else:
+                msg = (
+                    f"Chain saved with {count} certificate{'s' if count != 1 else ''}, "
+                    f"but a root CA was not found. The chain may be incomplete — "
+                    f"add intermediate certificates and rebuild.\n\n{path}"
+                )
+            self.queue.put(("success", msg, path))
         except Exception as e:
             self.queue.put(("error", str(e)))
     
@@ -1300,7 +1374,8 @@ class AIOSSLToolApp:
         """Browse for certificate chain file"""
         file = filedialog.askopenfilename(
             title="Select Certificate Chain",
-            filetypes=[("Certificate files", "*.cer *.crt *.pem"), ("All files", "*.*")]
+            initialdir=self.save_directory,
+            filetypes=cert_filetypes()
         )
         if file:
             self.pfx_chain_file = file
@@ -1430,7 +1505,22 @@ class AIOSSLToolApp:
             )
             
             # Save PFX file
-            pfx_path = os.path.join(self.save_directory, "Certificate.pfx")
+            leaf_pub = certs[0].public_key().public_bytes(
+                serialization.Encoding.DER,
+                serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            key_pub = key.public_key().public_bytes(
+                serialization.Encoding.DER,
+                serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            if leaf_pub != key_pub:
+                messagebox.showerror(
+                    "Error",
+                    "The selected private key does not match the first certificate in the chain."
+                )
+                return
+            
+            pfx_path = os.path.join(self.save_directory, "FullChain-pfx.pfx")
             with open(pfx_path, "wb") as f:
                 f.write(pfx_data)
             
@@ -1449,24 +1539,25 @@ class AIOSSLToolApp:
     
     def load_certificates_from_pem(self, data):
         certs = []
-        for block in data.split(b'-----END CERTIFICATE-----'):
-            if b'-----BEGIN CERTIFICATE-----' in block:
-                block += b'-----END CERTIFICATE-----\n'
-                try:
-                    certs.append(x509.load_pem_x509_certificate(block, default_backend()))
-                except Exception:
-                    pass
+        if b'-----BEGIN CERTIFICATE-----' in data:
+            for block in data.split(b'-----END CERTIFICATE-----'):
+                if b'-----BEGIN CERTIFICATE-----' in block:
+                    block += b'-----END CERTIFICATE-----\n'
+                    try:
+                        certs.append(x509.load_pem_x509_certificate(block, default_backend()))
+                    except Exception:
+                        pass
+        if not certs:
+            try:
+                certs.append(x509.load_der_x509_certificate(data, default_backend()))
+            except Exception:
+                pass
         return certs
     def is_self_signed(self, cert):
         return cert.issuer == cert.subject
     def verify_signature(self, child, parent):
         try:
-            parent.public_key().verify(
-                child.signature,
-                child.tbs_certificate_bytes,
-                padding.PKCS1v15() if isinstance(parent.public_key(), rsa.RSAPublicKey) else padding.PSS(mgf=padding.PSS.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                child.signature_hash_algorithm
-            )
+            child.verify_directly_issued_by(parent)
             return True
         except Exception:
             return False

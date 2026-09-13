@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @StateObject private var updaterViewModel = UpdaterViewModel()
+    @EnvironmentObject private var updaterViewModel: UpdaterViewModel
     @State private var showSarcasticWarning = false
     @State private var iconImage: NSImage?
     
@@ -74,7 +74,7 @@ struct SettingsView: View {
                                     Text("Check for updates automatically")
                                 }
                                 .onChange(of: updaterViewModel.automaticUpdateChecks) {
-                                    updaterViewModel.toggleAutomaticUpdates()
+                                    updaterViewModel.savePreferences()
                                 }
                                 
                                 Divider()
@@ -152,22 +152,22 @@ struct SettingsView: View {
                         GroupBox(label: Label("System", systemImage: "cpu")) {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack {
-                                    Text("Security Framework")
+                                    Text("Certificate Store")
                                     Spacer()
-                                    Label("Native", systemImage: "checkmark.seal.fill")
+                                    Label("macOS Keychain", systemImage: "checkmark.seal.fill")
                                         .foregroundColor(.green)
                                 }
-                                Text("All cryptographic operations use Apple's Security framework for maximum safety and compliance with macOS security standards.")
+                                Text("Chain building uses Apple's Security framework and the system keychain to locate issuers. CSR generation and PFX creation use the system OpenSSL (/usr/bin/openssl).")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .padding(.leading, 2)
                                 HStack {
-                                    Text("Sandboxed")
+                                    Text("Local only")
                                     Spacer()
                                     Label("Yes", systemImage: "lock.fill")
                                         .foregroundColor(.green)
                                 }
-                                Text("The app runs in a strict macOS sandbox, isolating it from the rest of your system for enhanced privacy and protection.")
+                                Text("Certificate files stay on your Mac. Network access is used only to check for app updates.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .padding(.leading, 2)
@@ -210,14 +210,6 @@ struct SettingsView: View {
                         .padding(.bottom)
                 }
             }
-        }
-        .alert("Update Available", isPresented: $updaterViewModel.showUpdateAlert) {
-            Button("Download v\(updaterViewModel.latestVersion)") {
-                updaterViewModel.openReleaseURL()
-            }
-            Button("Later", role: .cancel) { }
-        } message: {
-            Text("A new version (\(updaterViewModel.latestVersion)) is available. Click Download to open the release page in your browser.")
         }
         .alert("⚠️ SAFETY OFF ⚠️", isPresented: $showSarcasticWarning) {
             Button("I Like to Live Dangerously") {

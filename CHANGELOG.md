@@ -5,6 +5,20 @@ All notable changes to AIO SSL Tool will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.4] - 2026-09-12
+
+### Fixed
+- Windows: Chain Builder crashed (`queue` was never imported)
+- Windows: CSRs with SANs crashed (`ipaddress` was never imported)
+- Windows: ECDSA issuer verification used RSA-PSS, so ECC chains stayed incomplete
+- Windows: DER `.cer` files were not loaded
+- Windows: CSR email, archive domain, country validation, and empty-CN handling
+- macOS: Automatic-update toggle inverted itself; launch update alerts never appeared
+- macOS: Update download opened the repo homepage instead of the release
+- macOS: Default PFX used LibreSSL RC2-40/3DES/SHA-1; `-legacy` failed on system OpenSSL
+- macOS/Windows: Chain Builder could not rebuild after the first success
+- PFX archive, private-key file permissions, and OpenSSL process timeouts on macOS
+
 ## [6.2.1] - 2026-02-22
 
 ### Fixed

@@ -49,8 +49,8 @@ update_readme() {
     if [ "$platform" == "macos" ] || [ "$platform" == "both" ]; then
         echo "📝 Updating macOS download link in README..."
         
-        # Update macOS link - version in label and URL path, but DMG filename is just AIOSSLTool.dmg
-        sed_inplace -E "s|(macOS\*\* \| \[\*\*Download DMG \(v)[0-9.]+(\)\*\*\]\(https://github.com/[^/]+/[^/]+/releases/download/v)[0-9.]+(/AIOSSLTool.dmg\))|\1${version}\2${version}\3|g" "$README"
+        # Update macOS download label, tag path, and versioned DMG filename
+        sed_inplace -E "s|Download DMG \(V[0-9.]+\)\]\(https://github.com/([^/]+)/([^/]+)/releases/download/V[0-9.]+/AIO-SSL-Tool-macOS-V[0-9.]+\.dmg\)|Download DMG (V${version})](https://github.com/\1/\2/releases/download/V${version}/AIO-SSL-Tool-macOS-V${version}.dmg)|g" "$README"
         
         echo -e "${GREEN}✓ macOS link updated to v${version}${NC}"
     fi
@@ -58,8 +58,8 @@ update_readme() {
     if [ "$platform" == "windows" ] || [ "$platform" == "both" ]; then
         echo "📝 Updating Windows download link in README..."
         
-        # Update Windows link - version in label and URL path
-        sed_inplace -E "s|(Windows\*\* \| \[\*\*Download EXE \(v)[0-9.]+(\)\*\*\]\(https://github.com/[^/]+/[^/]+/releases/download/v)[0-9.]+(/AIO-SSL-Tool.exe\))|\1${version}\2${version}\3|g" "$README"
+        # Update Windows download label, tag path, and versioned EXE filename
+        sed_inplace -E "s|Download EXE \(V[0-9.]+\)\]\(https://github.com/([^/]+)/([^/]+)/releases/download/V[0-9.]+/AIO-SSL-Tool-Windows-V[0-9.]+\.exe\)|Download EXE (V${version})](https://github.com/\1/\2/releases/download/V${version}/AIO-SSL-Tool-Windows-V${version}.exe)|g" "$README"
         
         echo -e "${GREEN}✓ Windows link updated to v${version}${NC}"
     fi
@@ -69,7 +69,13 @@ update_readme() {
 update_appcast() {
     local version=$1
     local file_size=$2
-    local version_number=$(echo $version | cut -d'.' -f1)
+    local plist="$REPO_ROOT/macOS/AIOSSLTool/Info.plist"
+    local version_number
+    version_number=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist" 2>/dev/null || true)
+    if [ -z "$version_number" ]; then
+        echo -e "${RED}Error: Could not read CFBundleVersion from Info.plist${NC}"
+        exit 1
+    fi
     
     if [ "$file_size" -eq 0 ]; then
         echo -e "${YELLOW}⚠ File size not provided, skipping appcast update${NC}"

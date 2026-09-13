@@ -6,6 +6,31 @@
         <description>Most recent updates to AIO SSL Tool</description>
         <language>en</language>
 
+        <!-- Version 6.4.4 - Maintenance Patch -->
+        <item>
+            <title>Version 6.4.4</title>
+            <link>https://github.com/cmdlabtech/AIO-SSL-Tool/releases/tag/V6.4.4</link>
+            <sparkle:version>20</sparkle:version>
+            <sparkle:shortVersionString>6.4.4</sparkle:shortVersionString>
+            <description><![CDATA[
+                <h2>What's New in 6.4.4</h2>
+                <ul>
+                    <li>Windows: Fix Chain Builder and SAN CSR crashes</li>
+                    <li>Windows: Fix ECDSA chain building, DER certificate loading, and CSR field handling</li>
+                    <li>macOS: Fix update checker, LibreSSL PFX defaults, and chain rebuild flow</li>
+                    <li>Maintenance patch of the final AIO SSL Tool line — successor app PRISM available at prism.cmdlab.tech</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sat, 12 Sep 2026 12:00:00 +0000</pubDate>
+            <enclosure
+                url="https://github.com/cmdlabtech/AIO-SSL-Tool/releases/download/V6.4.4/AIO-SSL-Tool-macOS-V6.4.4.dmg"
+                sparkle:version="20"
+                sparkle:shortVersionString="6.4.4"
+                length="1979539"
+                type="application/octet-stream" />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+
         <!-- Version 6.4.3 - Final Release -->
         <item>
             <title>Version 6.4.3</title>

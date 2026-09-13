@@ -4,10 +4,11 @@
 //
 
 import SwiftUI
+import AIOSSLToolCore
 
 struct PFXGeneratorView: View {
     @ObservedObject var viewModel: SSLToolViewModel
-    @StateObject private var updaterViewModel = UpdaterViewModel()
+    @EnvironmentObject private var updaterViewModel: UpdaterViewModel
     @State private var isVerifyingPassword = false
     @State private var passwordVerified = false
     @State private var passwordVerificationFailed = false
@@ -69,7 +70,7 @@ struct PFXGeneratorView: View {
                                         }
                                     } else {
                                         VStack(spacing: 12) {
-                                            if viewModel.fullChainCreated {
+                                            if viewModel.fullChainFileExists {
                                                 VStack(spacing: 8) {
                                                     Image(systemName: "doc.badge.plus")
                                                         .font(.largeTitle)
@@ -238,7 +239,7 @@ struct PFXGeneratorView: View {
                                                 }
                                                 .pickerStyle(.segmented)
                                                 .onChange(of: pfxOptions.macAlgorithm) { _, newValue in
-                                                    if newValue.isLegacy && !updaterViewModel.neverShowAdvancedOptionsWarning && !showAdvancedOptions {
+                                                    if newValue.isLegacy && !updaterViewModel.neverShowAdvancedOptionsWarning {
                                                         showLegacyWarning = true
                                                     }
                                                 }
@@ -261,7 +262,7 @@ struct PFXGeneratorView: View {
                                                 }
                                                 .pickerStyle(.segmented)
                                                 .onChange(of: pfxOptions.encryptionAlgorithm) { _, newValue in
-                                                    if newValue.isLegacy && !updaterViewModel.neverShowAdvancedOptionsWarning && !showAdvancedOptions {
+                                                    if newValue.isLegacy && !updaterViewModel.neverShowAdvancedOptionsWarning {
                                                         showLegacyWarning = true
                                                     }
                                                 }
@@ -290,17 +291,13 @@ struct PFXGeneratorView: View {
                                                     .foregroundColor(.orange).font(.caption)
                                             }
                                         }
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            if !showAdvancedOptions && !updaterViewModel.neverShowAdvancedOptionsWarning {
-                                                showLegacyWarning = true
-                                            }
-                                            withAnimation {
-                                                showAdvancedOptions.toggle()
-                                            }
-                                        }
                                     }
                                     .padding(.vertical, 4)
+                                    .onChange(of: showAdvancedOptions) { _, isOpen in
+                                        if isOpen && !updaterViewModel.neverShowAdvancedOptionsWarning {
+                                            showLegacyWarning = true
+                                        }
+                                    }
                                     
                                     Button(action: createPFX) {
                                         Label("Create PFX File", systemImage: "sparkles")
@@ -366,59 +363,40 @@ struct PFXGeneratorView: View {
         passwordVerified = false
         passwordVerificationFailed = false
         
-        Task {
+        let passphrase = viewModel.keyPassphrase
+        
+        Task.detached {
             do {
                 let keyData = try Data(contentsOf: keyFile)
                 
-                // Use OpenSSL to verify the password
-                let tempDir = NSTemporaryDirectory()
+                let tempDir = FileManager.default.temporaryDirectory.path
                 let uuid = UUID().uuidString
                 let keyPath = (tempDir as NSString).appendingPathComponent("temp_\(uuid).key")
                 let passFilePath = (tempDir as NSString).appendingPathComponent("temp_\(uuid).pass")
-                let outPath = (tempDir as NSString).appendingPathComponent("temp_\(uuid).out")
                 
                 defer {
                     try? FileManager.default.removeItem(atPath: keyPath)
                     try? FileManager.default.removeItem(atPath: passFilePath)
-                    try? FileManager.default.removeItem(atPath: outPath)
                 }
                 
-                // Write key to temp file
-                try keyData.write(to: URL(fileURLWithPath: keyPath))
-                
-                // Build OpenSSL command to read the key
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+                try keyData.write(to: URL(fileURLWithPath: keyPath), options: .atomic)
+                CertificateUtils.setSecurePermissions(at: keyPath)
                 
                 var arguments = ["pkey", "-in", keyPath, "-noout"]
                 
-                // Add password if provided
-                if !viewModel.keyPassphrase.isEmpty {
-                    try viewModel.keyPassphrase.write(to: URL(fileURLWithPath: passFilePath), atomically: true, encoding: .utf8)
+                if !passphrase.isEmpty {
+                    try CertificateUtils.writeSecure(passphrase, to: passFilePath)
                     arguments.append(contentsOf: ["-passin", "file:\(passFilePath)"])
                 } else {
                     arguments.append(contentsOf: ["-passin", "pass:"])
                 }
                 
-                process.arguments = arguments
-                
-                let pipe = Pipe()
-                let errorPipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = errorPipe
-                
-                try process.run()
-                process.waitUntilExit()
+                try CertificateUtils.runOpenSSL(arguments)
                 
                 await MainActor.run {
                     isVerifyingPassword = false
-                    if process.terminationStatus == 0 {
-                        passwordVerified = true
-                        passwordVerificationFailed = false
-                    } else {
-                        passwordVerified = false
-                        passwordVerificationFailed = true
-                    }
+                    passwordVerified = true
+                    passwordVerificationFailed = false
                 }
             } catch {
                 await MainActor.run {
@@ -446,6 +424,7 @@ struct PFXGeneratorView: View {
         
         if panel.runModal() == .OK {
             certificateChainFile = panel.url
+            viewModel.pfxCreated = false
         }
     }
     
@@ -458,42 +437,10 @@ struct PFXGeneratorView: View {
     }
     
     private func createPFX() {
-        guard let chainFile = certificateChainFile,
-              let privateKey = viewModel.privateKeyFile,
-              let saveDir = viewModel.saveDirectory,
-              !viewModel.pfxPassphrase.isEmpty else {
+        guard let chainFile = certificateChainFile else {
             viewModel.showError("Missing certificate chain, private key, save location, or PFX password")
             return
         }
-        
-        Task {
-            do {
-                let chainData = try Data(contentsOf: chainFile)
-                let certificates = try CertificateUtils.loadCertificates(from: chainData)
-                
-                let keyData = try Data(contentsOf: privateKey)
-                
-                let pfxData = try CertificateUtils.createPFX(
-                    certificates: certificates,
-                    privateKeyData: keyData,
-                    keyPassword: viewModel.keyPassphrase.isEmpty ? nil : viewModel.keyPassphrase,
-                    pfxPassword: viewModel.pfxPassphrase,
-                    options: pfxOptions
-                )
-                
-                let pfxPath = saveDir.appendingPathComponent("FullChain-pfx.pfx")
-                try pfxData.write(to: pfxPath)
-                
-                await MainActor.run {
-                    viewModel.pfxCreated = true
-                    viewModel.statusMessage = "PFX created: FullChain-pfx.pfx"
-                    viewModel.showSuccess("PFX file created successfully!")
-                }
-            } catch {
-                await MainActor.run {
-                    viewModel.showError("Failed to create PFX: \(error.localizedDescription)")
-                }
-            }
-        }
+        viewModel.createPFX(chainFile: chainFile, options: pfxOptions)
     }
 }

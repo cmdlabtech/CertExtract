@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import AIOSSLToolCore
 
 struct CSRGenerationView: View {
     @ObservedObject var viewModel: SSLToolViewModel
@@ -39,7 +40,7 @@ struct CSRGenerationView: View {
             
             ScrollView {
                 if viewModel.saveDirectory == nil {
-                     ContentUnavailableView("Save Location Required", systemImage: "folder.badge.plus", description: Text("Please select a save location in the Chain Builder tool first."))
+                     ContentUnavailableView("Save Location Required", systemImage: "folder.badge.plus", description: Text("Go to Home and set your working directory first."))
                         .padding(.top, 50)
                 } else {
                     VStack(alignment: .leading, spacing: 20) {

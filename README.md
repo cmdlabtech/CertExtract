@@ -8,7 +8,7 @@ Either way, thanks for using it!
 **AIO SSL Tool has grown into [PRISM](https://prism.cmdlab.tech) — a full PKI and certificate management suite.**
 Visit [prism.cmdlab.tech](https://prism.cmdlab.tech) to download PRISM and purchase a license key.
 
-V6.4.3 is the final release of AIO SSL Tool.
+V6.4.4 is a maintenance patch of the final AIO SSL Tool line.
 
 # AIO SSL Tool
 
@@ -31,8 +31,8 @@ A native macOS application and cross-platform desktop tool built for sysadmins a
 
 | Platform | Download | Requirements |
 |----------|----------|--------------|
-| **🍎 macOS** | [**Download DMG (V6.4.3)**](https://github.com/cmdlabtech/AIO-SSL-Tool/releases/download/V6.4.3/AIO-SSL-Tool-macOS-V6.4.3.dmg) | macOS 14.0+ (Sonoma/Sequoia) |
-| **🪟 Windows** | [**Download EXE (V6.4.3)**](https://github.com/cmdlabtech/AIO-SSL-Tool/releases/download/V6.4.3/AIO-SSL-Tool-Windows-V6.4.3.exe) | Windows 10/11 |
+| **🍎 macOS** | [**Download DMG (V6.4.4)**](https://github.com/cmdlabtech/AIO-SSL-Tool/releases/download/V6.4.4/AIO-SSL-Tool-macOS-V6.4.4.dmg) | macOS 14.0+ (Sonoma/Sequoia) |
+| **🪟 Windows** | [**Download EXE (V6.4.4)**](https://github.com/cmdlabtech/AIO-SSL-Tool/releases/download/V6.4.4/AIO-SSL-Tool-Windows-V6.4.4.exe) | Windows 10/11 |
 
 ### Installation
 

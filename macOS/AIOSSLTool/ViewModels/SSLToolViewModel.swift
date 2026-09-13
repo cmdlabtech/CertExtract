@@ -4,14 +4,15 @@
 //
 
 import SwiftUI
-import Combine
-import Security
-import CryptoKit
+import AppKit
+import AIOSSLToolCore
 
 @MainActor
 class SSLToolViewModel: ObservableObject {
     @Published var saveDirectory: URL?
-    @Published var certificateFile: URL?
+    @Published var certificateFile: URL? {
+        didSet { if certificateFile != oldValue { fullChainCreated = false } }
+    }
     @Published var privateKeyFile: URL?
     @Published var keyPassphrase: String = ""
     @Published var pfxPassphrase: String = ""
@@ -26,8 +27,28 @@ class SSLToolViewModel: ObservableObject {
     @Published var successMessage: String = ""
     @Published var workingDirectoryFiles: [URL] = []
     
+    private static let saveDirectoryKey = "SaveDirectoryPath"
+    
+    init() {
+        if let path = UserDefaults.standard.string(forKey: Self.saveDirectoryKey),
+           FileManager.default.fileExists(atPath: path) {
+            saveDirectory = URL(fileURLWithPath: path)
+            loadWorkingDirectoryFiles()
+            refreshChainStatus()
+        }
+    }
+    
     var canCreatePFX: Bool {
-        privateKeyFile != nil && fullChainCreated && !pfxPassphrase.isEmpty
+        privateKeyFile != nil && fullChainFileExists && !pfxPassphrase.isEmpty
+    }
+    
+    var fullChainFileExists: Bool {
+        guard let saveDir = saveDirectory else { return false }
+        return FileManager.default.fileExists(atPath: saveDir.appendingPathComponent("FullChain.cer").path)
+    }
+    
+    func refreshChainStatus() {
+        fullChainCreated = fullChainFileExists
     }
     
     func selectSaveDirectory() {
@@ -40,9 +61,11 @@ class SSLToolViewModel: ObservableObject {
         
         if panel.runModal() == .OK {
             saveDirectory = panel.url
+            UserDefaults.standard.set(panel.url?.path, forKey: Self.saveDirectoryKey)
             statusMessage = "Save location set"
             hasError = false
             loadWorkingDirectoryFiles()
+            refreshChainStatus()
         }
     }
     
@@ -60,8 +83,8 @@ class SSLToolViewModel: ObservableObject {
                 options: [.skipsHiddenFiles]
             )
             
-            // Filter for certificate files (common extensions)
-            let certificateExtensions = ["cer", "crt", "pem", "der", "cert", "key", "pfx", "p12", "p7b"]
+            // Chain builder should only list certificate files, not keys or PFX.
+            let certificateExtensions = ["cer", "crt", "pem", "der", "cert"]
             workingDirectoryFiles = files.filter { url in
                 let pathExtension = url.pathExtension.lowercased()
                 return certificateExtensions.contains(pathExtension)
@@ -117,7 +140,9 @@ class SSLToolViewModel: ObservableObject {
         isBuilding = true
         statusMessage = "Building certificate chain..."
         
-        Task {
+        let extraURLs = workingDirectoryFiles.filter { $0 != certFile }
+        
+        Task.detached {
             do {
                 let certData = try Data(contentsOf: certFile)
                 let certificates = try CertificateUtils.loadCertificates(from: certData)
@@ -126,45 +151,47 @@ class SSLToolViewModel: ObservableObject {
                     throw SSLError.noCertificateFound
                 }
                 
-                // Build chain by fetching issuers from system keychain
-                var chain = certificates
-                var current = chain.last!
-                let maxChainDepth = 15
-
-                while !CertificateUtils.isSelfSigned(current) && chain.count < maxChainDepth {
-                    if let issuer = try? CertificateUtils.fetchIssuerFromKeychain(for: current) {
-                        if !chain.contains(where: { CertificateUtils.certificatesMatch($0, issuer) }) {
-                            chain.append(issuer)
-                            current = issuer
-                        } else {
-                            break
-                        }
-                    } else {
-                        break
+                var additional: [Certificate] = []
+                for url in extraURLs {
+                    if let data = try? Data(contentsOf: url),
+                       let certs = try? CertificateUtils.loadCertificates(from: data) {
+                        additional.append(contentsOf: certs)
                     }
                 }
                 
-                // Save full chain
-                let chainData = chain.map { $0.pemRepresentation }.joined(separator: "\n")
+                let result = CertificateUtils.buildCertificateChain(from: certificates, additional: additional)
+                let chainData = result.chain.map { $0.pemRepresentation }.joined(separator: "\n")
                 let chainPath = saveDir.appendingPathComponent("FullChain.cer")
                 try chainData.write(to: chainPath, atomically: true, encoding: .utf8)
                 
-                fullChainCreated = true
-                statusMessage = "Full chain saved: FullChain.cer"
-                isBuilding = false
-                hasError = false
+                let domain = result.chain.first?.subject
+                let count = result.chain.count
                 
-                // Archive: use first cert's subject as domain
-                let domain = chain.first?.subject
-                archiveFiles([chainPath], domain: domain)
+                await MainActor.run {
+                    self.fullChainCreated = true
+                    self.isBuilding = false
+                    self.hasError = false
+                    self.loadWorkingDirectoryFiles()
+                    self.archiveFiles([chainPath], domain: domain)
+                    
+                    if result.complete {
+                        self.statusMessage = "Full chain saved: FullChain.cer (\(count) certificate\(count == 1 ? "" : "s"))"
+                        self.showSuccess("Full chain saved: FullChain.cer (\(count) certificate\(count == 1 ? "" : "s"))")
+                    } else {
+                        self.statusMessage = "Chain saved (incomplete): FullChain.cer"
+                        self.showSuccess("Chain saved with \(count) certificate\(count == 1 ? "" : "s"), but a root CA was not found. The chain may be incomplete — add intermediate certificates to the working directory and rebuild.")
+                    }
+                }
             } catch {
-                showError("Failed to build chain: \(error.localizedDescription)")
-                isBuilding = false
+                await MainActor.run {
+                    self.showError("Failed to build chain: \(error.localizedDescription)")
+                    self.isBuilding = false
+                }
             }
         }
     }
     
-    func createPFX(options: PFXOptions = PFXOptions()) {
+    func createPFX(chainFile: URL? = nil, options: PFXOptions = PFXOptions()) {
         guard let privateKey = privateKeyFile,
               let saveDir = saveDirectory,
               !pfxPassphrase.isEmpty else {
@@ -172,34 +199,46 @@ class SSLToolViewModel: ObservableObject {
             return
         }
         
-        Task {
+        let chainPath = chainFile ?? saveDir.appendingPathComponent("FullChain.cer")
+        guard FileManager.default.fileExists(atPath: chainPath.path) else {
+            showError("Certificate chain file not found. Build a chain or select a chain file first.")
+            return
+        }
+        
+        let keyPass = keyPassphrase
+        let pfxPass = pfxPassphrase
+        
+        Task.detached {
             do {
-                let chainPath = saveDir.appendingPathComponent("FullChain.cer")
                 let chainData = try Data(contentsOf: chainPath)
                 let certificates = try CertificateUtils.loadCertificates(from: chainData)
-                
                 let keyData = try Data(contentsOf: privateKey)
                 
                 let pfxData = try CertificateUtils.createPFX(
                     certificates: certificates,
                     privateKeyData: keyData,
-                    keyPassword: keyPassphrase.isEmpty ? nil : keyPassphrase,
-                    pfxPassword: pfxPassphrase,
+                    keyPassword: keyPass.isEmpty ? nil : keyPass,
+                    pfxPassword: pfxPass,
                     options: options
                 )
                 
                 let pfxPath = saveDir.appendingPathComponent("FullChain-pfx.pfx")
-                try pfxData.write(to: pfxPath)
+                try pfxData.write(to: pfxPath, options: .atomic)
+                CertificateUtils.setSecurePermissions(at: pfxPath.path)
                 
-                pfxCreated = true
-                statusMessage = "PFX created: FullChain-pfx.pfx"
-                showSuccess("PFX file created successfully!")
-                
-                // Archive: use first cert's subject as domain
                 let domain = certificates.first?.subject
-                archiveFiles([pfxPath], domain: domain)
+                
+                await MainActor.run {
+                    self.pfxCreated = true
+                    self.statusMessage = "PFX created: FullChain-pfx.pfx"
+                    self.archiveFiles([pfxPath], domain: domain)
+                    self.loadWorkingDirectoryFiles()
+                    self.showSuccess("PFX file created successfully!")
+                }
             } catch {
-                showError("Failed to create PFX: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.showError("Failed to create PFX: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -210,32 +249,38 @@ class SSLToolViewModel: ObservableObject {
             return
         }
         
-        Task {
+        let csrPath = saveDir.appendingPathComponent("csr.pem")
+        let keyPath = saveDir.appendingPathComponent("private_key.pem")
+        
+        Task.detached {
             do {
-                let (csr, privateKey) = try CertificateUtils.generateCSR(details: details)
+                let (csr, privateKeyPEM) = try CertificateUtils.generateCSR(details: details)
                 
-                let csrPath = saveDir.appendingPathComponent("csr.pem")
-                let keyPath = saveDir.appendingPathComponent("private_key.pem")
+                do {
+                    try csr.write(to: csrPath, atomically: true, encoding: .utf8)
+                    try privateKeyPEM.write(to: keyPath, atomically: true, encoding: .utf8)
+                    CertificateUtils.setSecurePermissions(at: keyPath.path)
+                } catch {
+                    try? FileManager.default.removeItem(at: csrPath)
+                    try? FileManager.default.removeItem(at: keyPath)
+                    throw error
+                }
                 
-                try csr.write(to: csrPath, atomically: true, encoding: .utf8)
-                try privateKey.write(to: keyPath, atomically: true, encoding: .utf8)
-                
-                privateKeyFile = keyPath
-                keyPassphrase = details.keyPassword ?? ""
-                statusMessage = "CSR + Key generated"
-                showSuccess("CSR and private key generated successfully!")
-                
-                // Archive CSR + key using commonName as domain
                 let domain = details.commonName.isEmpty ? nil : details.commonName
-                archiveFiles([csrPath, keyPath], domain: domain)
                 
-                // Check if full chain exists to enable PFX creation
-                let chainPath = saveDir.appendingPathComponent("FullChain.cer")
-                if FileManager.default.fileExists(atPath: chainPath.path) {
-                    fullChainCreated = true
+                await MainActor.run {
+                    self.privateKeyFile = keyPath
+                    self.keyPassphrase = details.keyPassword ?? ""
+                    self.statusMessage = "CSR + Key generated"
+                    self.archiveFiles([csrPath, keyPath], domain: domain)
+                    self.refreshChainStatus()
+                    self.loadWorkingDirectoryFiles()
+                    self.showSuccess("CSR and private key generated successfully!")
                 }
             } catch {
-                showError("Failed to generate CSR: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.showError("Failed to generate CSR: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -262,7 +307,7 @@ class SSLToolViewModel: ObservableObject {
         
         let fileManager = FileManager.default
         let timestamp = Self.archiveTimestamp()
-        let domainPath = Self.archiveDomainPath(for: domain)
+        let domainPath = CertificateUtils.archiveDomainPath(for: domain)
         
         let folderName = (UserDefaults.standard.object(forKey: "HideArchiveFolder") as? Bool ?? true) ? ".archive" : "archive"
         let archiveDir = saveDir
@@ -289,49 +334,7 @@ class SSLToolViewModel: ObservableObject {
         return formatter.string(from: Date())
     }
     
-    /// Determines archive path from a domain string.
-    /// - "example.com" → "example.com"
-    /// - "sub.example.com" → "example.com/sub.example.com"
-    /// - "deep.sub.example.com" → "example.com/deep.sub.example.com"
-    /// - nil/empty/wildcard → "unknown"
     static func archiveDomainPath(for domain: String?) -> String {
-        guard var clean = domain?.trimmingCharacters(in: .whitespaces),
-              !clean.isEmpty else { return "unknown" }
-        
-        // Strip wildcard prefix (*.example.com → example.com)
-        if clean.hasPrefix("*.") {
-            clean = String(clean.dropFirst(2))
-        }
-        
-        let parts = clean.lowercased().split(separator: ".")
-        
-        // If it's a root domain (2 parts like example.com) or single label
-        if parts.count <= 2 {
-            return clean.lowercased()
-        }
-        
-        // Subdomain: extract root (last 2 parts) and nest subdomain under it
-        let root = parts.suffix(2).joined(separator: ".")
-        return "\(root)/\(clean.lowercased())"
-    }
-}
-
-enum SSLError: LocalizedError {
-    case noCertificateFound
-    case invalidCertificate
-    case chainBuildFailed
-    case pfxCreationFailed
-    
-    var errorDescription: String? {
-        switch self {
-        case .noCertificateFound:
-            return "No valid certificate found in file"
-        case .invalidCertificate:
-            return "Invalid or corrupted certificate"
-        case .chainBuildFailed:
-            return "Failed to build certificate chain"
-        case .pfxCreationFailed:
-            return "Failed to create PFX file"
-        }
+        CertificateUtils.archiveDomainPath(for: domain)
     }
 }

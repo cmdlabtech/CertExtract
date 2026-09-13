@@ -15,18 +15,14 @@ struct AIOSSLToolApp: App {
         WindowGroup {
             ContentView()
                 .frame(minWidth: 900, minHeight: 750)
-                .onAppear {
-                    // Check for updates on app launch
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        updaterViewModel.checkForUpdatesInBackground()
-                    }
-                }
+                .environmentObject(updaterViewModel)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         
         Settings {
             SettingsView()
+                .environmentObject(updaterViewModel)
         }
     }
 }

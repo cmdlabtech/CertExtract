@@ -131,9 +131,9 @@ struct HomeView: View {
                         )
                         
                         QuickTipView(
-                            icon: "key.fill",
-                            title: "Key Extractor",
-                            description: "Extract certificates and keys from PFX files"
+                            icon: "shippingbox.fill",
+                            title: "PFX Generator",
+                            description: "Create PFX/P12 files from certificate chains and private keys"
                         )
                     }
                 }
