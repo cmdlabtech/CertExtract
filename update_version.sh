@@ -71,7 +71,12 @@ update_appcast() {
     local file_size=$2
     local plist="$REPO_ROOT/macOS/AIOSSLTool/Info.plist"
     local version_number
-    version_number=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist" 2>/dev/null || true)
+    version_number=$(python3 -c "
+import re, sys
+text = open(sys.argv[1], encoding='utf-8').read()
+m = re.search(r'<key>CFBundleVersion</key>\\s*<string>([^<]+)</string>', text)
+print(m.group(1) if m else '')
+" "$plist")
     if [ -z "$version_number" ]; then
         echo -e "${RED}Error: Could not read CFBundleVersion from Info.plist${NC}"
         exit 1
